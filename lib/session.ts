@@ -1,71 +1,53 @@
-import { cookies } from "next/headers";
+import { SignJWT, jwtVerify } from "jose";
 
-export const SESSION_COOKIE = "smart_inventory_session";
-export const SESSION_TTL_SECONDS = 60 * 60 * 24 * 7;
+// Mengambil secret key dari Environment Variable atau menggunakan fallback default
+const secretKey = process.env.SESSION_SECRET || "default_secret_key_change_me_in_production";
+const encodedKey = new TextEncoder().encode(secretKey);
 
-function getSecret() {
-  const secret = process.env.SESSION_SECRET;
-  if (!secret || secret.length < 32) {
-    throw new Error("SESSION_SECRET must be at least 32 characters long.");
-  }
-  return secret;
-}
-
-function base64Url(bytes: Uint8Array) {
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
-}
-
-async function sign(value: string) {
-  const key = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(getSecret()),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  const signature = await crypto.subtle.sign(
-    "HMAC",
-    key,
-    new TextEncoder().encode(value),
-  );
-  return base64Url(new Uint8Array(signature));
-}
-
-export async function createSessionToken() {
-  const expiresAt = Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS;
-  return `${expiresAt}.${await sign(String(expiresAt))}`;
-}
-
-export async function verifySessionToken(token?: string) {
-  if (!token) return false;
-
-  const parts = token.split(".");
-  if (parts.length !== 2) return false;
-
-  const [expiresAt, signature] = parts;
-  const expires = Number(expiresAt);
-  if (!Number.isSafeInteger(expires) || expires <= Math.floor(Date.now() / 1000)) return false;
-
-  const expected = await sign(expiresAt);
-  if (signature.length !== expected.length) return false;
-
-  let mismatch = 0;
-  for (let i = 0; i < expected.length; i += 1) {
-    mismatch |= expected.charCodeAt(i) ^ signature.charCodeAt(i);
-  }
-  return mismatch === 0;
-}
-
-export function getSessionToken() {
-  return cookies().get(SESSION_COOKIE)?.value;
-}
-
-export const sessionCookieOptions = {
-  httpOnly: true,
-  secure: process.env.NODE_ENV === "production",
-  sameSite: "lax" as const,
-  path: "/",
-  maxAge: SESSION_TTL_SECONDS,
+export type SessionPayload = {
+  userId: string;
+  expiresAt: Date;
+  [key: string]: any;
 };
+
+/**
+ * Mengubah Uint8Array menjadi string Base64URL
+ * Memperbaiki masalah iterasi TypeScript pada Uint8Array
+ */
+function base64Url(bytes: Uint8Array): string {
+  let binary = "";
+  const len = bytes.byteLength;
+  for (let i = 0; i < len; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  return btoa(binary)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+}
+
+/**
+ * Membuat Token JWT Session
+ */
+export async function encrypt(payload: SessionPayload): Promise<string> {
+  return new SignJWT(payload)
+    .setProtectedHeader({ alg: "HS256" })
+    .setIssuedAt()
+    .setExpirationTime("7d")
+    .sign(encodedKey);
+}
+
+/**
+ * Memverifikasi Token JWT Session
+ */
+export async function decrypt(session: string | undefined = ""): Promise<SessionPayload | null> {
+  try {
+    const { payload } = await jwtVerify(session, encodedKey, {
+      algorithms: ["HS256"],
+    });
+    return payload as SessionPayload;
+  } catch (error) {
+    console.error("Gagal melakukan verifikasi session token:", error);
+    return null;
+  }
+}
