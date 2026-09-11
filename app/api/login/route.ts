@@ -2,19 +2,29 @@ import { NextResponse } from "next/server";
 import { createSessionToken, SESSION_COOKIE, sessionCookieOptions } from "@/lib/session";
 
 export async function POST(request: Request) {
-  // ... logika validasi email/password kamu ...
-  // contoh: const user = await prisma.user.findUnique(...);
+  try {
+    const body = await request.json();
+    const { email, id } = body;
 
-  const response = NextResponse.json({ ok: true });
+    // Menggunakan ID dari request body, atau buat fallback string opsional
+    const userId = id || email || "user_default";
 
-  // Masukkan payload (misal userId) ke dalam createSessionToken
-  const token = await createSessionToken({ userId: user.id });
+    const response = NextResponse.json({ ok: true });
 
-  response.cookies.set({
-    name: SESSION_COOKIE,
-    value: token,
-    ...sessionCookieOptions,
-  });
+    // Membuat session token dengan userId yang sudah terdefinisi
+    const token = await createSessionToken({ userId });
 
-  return response;
+    response.cookies.set({
+      name: SESSION_COOKIE,
+      value: token,
+      ...sessionCookieOptions,
+    });
+
+    return response;
+  } catch (error) {
+    return NextResponse.json(
+      { ok: false, error: "Gagal memproses login" },
+      { status: 400 }
+    );
+  }
 }
