@@ -7,7 +7,7 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const token = getSessionToken();
+  const token = await getSessionToken();
   const authenticated = await verifySessionToken(token);
 
   if (!authenticated) {
